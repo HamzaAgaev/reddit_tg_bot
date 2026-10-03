@@ -5,3 +5,7 @@ __pycache__/
 venv/
 data/
 tmp/
+ChatExport_*/
+.DS_Store
+reddit_links*.txt
+scripts/extract_reddit_links.py
