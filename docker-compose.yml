@@ -18,3 +18,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./tmp:/app/tmp
+      # the local Bot API server runs in --local mode (returns absolute
+      # filesystem paths from getFile instead of HTTP-downloadable ones),
+      # so the bot needs read access to the same files at the same path
+      - ./data/bot-api-data:/var/lib/telegram-bot-api:ro
