@@ -199,8 +199,9 @@ class Worker:
                 downloaded = await self._download_media(http_session, post_id, media)
 
                 logger.info("[%s] sending to telegram", post_id)
+                source_url = f"Source: https://redd.it/{post_id}"
                 async with self._send_lock:
-                    await self._dispatch_send(job.target_chat_id, downloaded)
+                    await self._dispatch_send(job.target_chat_id, downloaded, source_url)
                     await asyncio.sleep(self.send_delay)
             except Exception:
                 logger.exception("Failed to process media for %s", post_id)
@@ -294,30 +295,39 @@ class Worker:
 
         return _DownloadedGallery(photo_paths, gif_paths)
 
-    async def _dispatch_send(self, chat_id: int, downloaded: _Downloaded) -> None:
+    async def _dispatch_send(self, chat_id: int, downloaded: _Downloaded, caption: str) -> None:
         if isinstance(downloaded, _DownloadedPhoto):
-            await send_photo(self.bot, chat_id, downloaded.path)
+            await send_photo(self.bot, chat_id, downloaded.path, caption=caption)
         elif isinstance(downloaded, _DownloadedGif):
-            await send_animation(self.bot, chat_id, downloaded.path)
+            await send_animation(self.bot, chat_id, downloaded.path, caption=caption)
         elif isinstance(downloaded, _DownloadedVideo):
-            await send_video(self.bot, chat_id, downloaded.path, downloaded.width, downloaded.height)
+            await send_video(
+                self.bot, chat_id, downloaded.path, downloaded.width, downloaded.height, caption=caption
+            )
         elif isinstance(downloaded, _DownloadedGallery):
-            await self._send_gallery_paths(chat_id, downloaded.photo_paths, downloaded.gif_paths)
+            await self._send_gallery_paths(chat_id, downloaded.photo_paths, downloaded.gif_paths, caption)
 
     async def _send_gallery_paths(
-        self, chat_id: int, photo_paths: list[Path], gif_paths: list[Path]
+        self, chat_id: int, photo_paths: list[Path], gif_paths: list[Path], caption: str
     ) -> None:
+        # The caption (source link) only needs to appear once per post, on the
+        # very first message sent for it — not repeated on every image/gif.
+        caption_used = False
+
         for start in range(0, len(photo_paths), 10):
             chunk = photo_paths[start : start + 10]
+            chunk_caption = None if caption_used else caption
             if len(chunk) == 1:
-                await send_photo(self.bot, chat_id, chunk[0])
+                await send_photo(self.bot, chat_id, chunk[0], caption=chunk_caption)
             else:
-                await send_photo_group(self.bot, chat_id, chunk)
+                await send_photo_group(self.bot, chat_id, chunk, caption=chunk_caption)
+            caption_used = True
             if start + 10 < len(photo_paths):
                 await asyncio.sleep(self.send_delay)
 
         for path in gif_paths:
-            await send_animation(self.bot, chat_id, path)
+            await send_animation(self.bot, chat_id, path, caption=None if caption_used else caption)
+            caption_used = True
             await asyncio.sleep(self.send_delay)
 
     async def _update_batch(self, batch_id: str, status: str) -> None:
